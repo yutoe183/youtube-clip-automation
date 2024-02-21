@@ -127,7 +127,7 @@ def generateTimestamp(results): # タイムスタンプ用の文字列を生成 
   sec_sum = 0
   for i in range(len_results):
     (id, date, sec_begin, sec_end, chat, yen, url) = results[i]
-    timestamp += secondToTime(sec_sum) + " " + str(i + 1) + ". " + date[:4] + "/" + date[4:6] + "/" + date[6:] + NEWLINE
+    timestamp += secondToTime(sec_sum) + " " + str(i + 1) + ". " + date[:4] + "/" + date[4:6] + "/" + date[6:] + " "
     timestamp += url + "&t=" + str(sec_begin) + "s" + NEWLINE
     sec_sum += sec_end - sec_begin
   return timestamp

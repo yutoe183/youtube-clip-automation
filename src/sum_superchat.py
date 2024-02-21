@@ -16,7 +16,17 @@ def getSecond(line): # 生データから時刻を抽出
   return int(str)
 
 def getText(line): # 生データからチャットを抽出
-  return subStrBegin(line, '"text": "', '"')
+  text = ""
+  str_begin = '"text": "'
+  str_end = '"'
+  while True: # チャットがいくつかに分割される場合があるためすべて抽出して結合
+    begin = line.find(str_begin) + len(str_begin)
+    if begin < len(str_begin):
+      break
+    end = line[begin:].find(str_end) + begin
+    text += line[begin:end]
+    line = line[end + len(str_end):]
+  return text
 
 def getYen(line): # 生データからスーパーチャット金額を抽出
   YEN_PER = {"¥": 1, "$": 150, "€": 160} # 円, ドル, ユーロ に対応 (為替レートは2024/02/13時点)
