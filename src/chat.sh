@@ -1,5 +1,5 @@
 #!/bin/sh
-# 作業用ルートディレクトリで実行 source src/chat.sh arg1 arg2 [arg3, arg4]
+# 作業用ルートディレクトリで実行 source src/chat.sh arg1 arg2 arg3 [arg4, arg5]
 # 引数(必須3個 + 任意2個): 作成するディレクトリ名, YouTubeのChannel ID, 検索文字列, 取得開始日(YYYYMMDD), 取得終了日(YYYYMMDD)
 
 source venv/yt-dlp_moviepy/bin/activate
