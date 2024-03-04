@@ -11,7 +11,7 @@ def subStrBegin(str, str_begin, str_end): # 該当範囲の文字列を切り出
   end = str[begin:].find(str_end) + begin
   return str[begin:end]
 
-def timeToSecond(str): # 時間表示(str)から秒数(int)に変換
+def timeToSecond(str): # 時間表示(str)から秒数(float)に変換
   SECOND_PER_MINUTE = 60
   MINUTE_PER_HOUR = 60
   DELIMITER = ":" # 時間表示の区切り文字
@@ -21,12 +21,13 @@ def timeToSecond(str): # 時間表示(str)から秒数(int)に変換
   index_delimiter = str.find(DELIMITER)
   minute = int(str[:index_delimiter])
   str = str[index_delimiter + len(DELIMITER):]
-  second = int(str)
+  second = float(str)
   return (hour * MINUTE_PER_HOUR + minute) * SECOND_PER_MINUTE + second
 
-def secondToTime(second_src): # 秒数(int)から時間表示(str)に変換
+def secondToTime(second_src): # 秒数(float)から時間表示(str)に変換
   SECOND_PER_MINUTE = 60
   MINUTE_PER_HOUR = 60
+  second_src = int(second_src)
   second = second_src % SECOND_PER_MINUTE
   second_src = int((second_src - second) / SECOND_PER_MINUTE)
   minute = second_src % MINUTE_PER_HOUR
@@ -36,12 +37,12 @@ def secondToTime(second_src): # 秒数(int)から時間表示(str)に変換
 
 def getResults(path): # ファイルから結果を取得
   DELIMITER = " " # 区切り文字
-  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: チャット数, [n][5]: 金額, [n][6]: URL
+  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: チャット数, [n][5]: コメント数, [n][6]: 金額, [n][7]: URL
   with open(path) as f:
     reader = csv.reader(f, delimiter=DELIMITER)
     for row in reader:
       if row[0][:4] != "http": # 行頭に変更がなければ除外
-        results.append([subStrBegin(row[0], "=", "&"), row[4], timeToSecond(row[2]), timeToSecond(row[3]), row[1], 0, row[0][row[0].find("http"):row[0].find("&")]])
+        results.append([subStrBegin(row[0], "=", "&"), row[4], timeToSecond(row[2]), timeToSecond(row[3]), row[1], 0, 0, row[0][row[0].find("http"):row[0].find("&")]])
   return results
 
 def getYenChatList(path): # ファイルからスーパーチャットの合計金額、チャット数を取得
@@ -52,7 +53,7 @@ def getYenChatList(path): # ファイルからスーパーチャットの合計�
   with open(path) as f:
     reader = csv.reader(f, delimiter=DELIMITER)
     for row in reader:
-      list_yen_chat.append((int(row[0]), int(row[1])))
+      list_yen_chat.append((int(row[0]), int(row[1]), int(row[2])))
   return list_yen_chat
 
 def updateYenChat(results, path): # 結果のうち、スーパーチャットの合計金額、チャット数を正確な値に更新
@@ -60,9 +61,10 @@ def updateYenChat(results, path): # 結果のうち、スーパーチャット�
   len_list = len(list_yen_chat)
   for i in range(len_list):
     results[i][4] = list_yen_chat[i][1]
-    results[i][5] = list_yen_chat[i][0]
+    results[i][5] = list_yen_chat[i][2]
+    results[i][6] = list_yen_chat[i][0]
 
-def displayText(date, count, yen): # 切り抜き動画中に表示する文字
+def displayText(date, count_chat, count_comment, yen): # 切り抜き動画中に表示する文字
   DISPLAY_DATE = True # 投稿日の表示オプション
   DISPLAY_COUNT = True # 該当チャット数の表示オプション
   DISPLAY_YEN = True # スーパーチャット金額(円)の表示オプション
@@ -70,8 +72,10 @@ def displayText(date, count, yen): # 切り抜き動画中に表示する文字
   display_text = ""
   if DISPLAY_DATE:
     display_text += date[:4] + "/" + date[4:6] + "/" + date[6:] + NEWLINE
-  if DISPLAY_COUNT and count > 0:
-    display_text += "関連チャット数: " + str(count) + NEWLINE
+  if DISPLAY_COUNT and count_chat > 0:
+    display_text += "関連チャット数: " + str(count_chat) + NEWLINE
+  if DISPLAY_COUNT and count_comment > 0:
+    display_text += "関連コメント数: " + str(count_comment) + NEWLINE
   if DISPLAY_YEN and yen > 0:
     display_text += "スパチャ総額: ¥" + str(yen) + NEWLINE
   if len(display_text) > 0:
@@ -81,7 +85,7 @@ def displayText(date, count, yen): # 切り抜き動画中に表示する文字
 def getResolution(results, dir): # 全切り抜きのうち、該当数が最も多い解像度を取得
   LIST_HEIGHT_16_9 = [144, 360, 480, 720, 1080, 1440, 2160, 4320] # 一般的な16:9の解像度(の高さ)一覧
   list_count = [0] * len(LIST_HEIGHT_16_9)
-  for (id, date, _, _, _, _, _) in results:
+  for (id, date, _, _, _, _, _, _) in results:
     path = dir + date + "[" + id + "]_clip0.mp4"
     video = VideoFileClip(path)
     index_nearest = numpy.argmin(numpy.abs(numpy.array(LIST_HEIGHT_16_9) - video.h))
@@ -108,9 +112,9 @@ def mergeClip(results, dir, path_font): # 全切り抜きを結合
   len_results = len(results)
   count_same_id = 0
   for i in range(len_results):
-    (id, date, sec_begin, sec_end, count, yen, url) = results[i]
+    (id, date, sec_begin, sec_end, count_chat, count_comment, yen, url) = results[i]
     path = dir + date + "[" + id + "]_clip" + str(count_same_id) + ".mp4"
-    text = displayText(date, count, yen)
+    text = displayText(date, count_chat, count_comment, yen)
     list_video.append(subClip(resolution, text, path, path_font))
     count_same_id += 1
     id_next = ""
@@ -126,9 +130,9 @@ def generateTimestamp(results): # タイムスタンプ用の文字列を生成 
   len_results = len(results)
   sec_sum = 0
   for i in range(len_results):
-    (id, date, sec_begin, sec_end, chat, yen, url) = results[i]
+    (_, date, sec_begin, sec_end, _, _, _, url) = results[i]
     timestamp += secondToTime(sec_sum) + " " + str(i + 1) + ". " + date[:4] + "/" + date[4:6] + "/" + date[6:] + " "
-    timestamp += url + "&t=" + str(sec_begin) + "s" + NEWLINE
+    timestamp += url + "&t=" + str(int(sec_begin)) + "s" + NEWLINE
     sec_sum += sec_end - sec_begin
   return timestamp
 
