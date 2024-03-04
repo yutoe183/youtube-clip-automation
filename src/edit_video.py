@@ -73,11 +73,11 @@ def displayText(date, count_chat, count_comment, yen): # 切り抜き動画中�
   if DISPLAY_DATE:
     display_text += date[:4] + "/" + date[4:6] + "/" + date[6:] + NEWLINE
   if DISPLAY_COUNT and count_chat > 0:
-    display_text += "関連チャット数: " + str(count_chat) + NEWLINE
+    display_text += "Chats: " + str(count_chat) + NEWLINE
   if DISPLAY_COUNT and count_comment > 0:
-    display_text += "関連コメント数: " + str(count_comment) + NEWLINE
+    display_text += "Comments: " + str(count_comment) + NEWLINE
   if DISPLAY_YEN and yen > 0:
-    display_text += "スパチャ総額: ¥" + str(yen) + NEWLINE
+    display_text += "Tips: ¥" + str(yen) + NEWLINE
   if len(display_text) > 0:
     display_text = display_text[:- len(NEWLINE)]
   return display_text
@@ -146,7 +146,7 @@ def execute(path_results, dir_video, path_dst_video, path_dst_timestamp, path_su
     f.write(timestamp)
 
 def main():
-  execute("../extract/results.txt", "../clip/", "clip.mp4", "timestamp.txt", "../extract/superchat.txt", "../../../src/font/MPLUSRounded1c-Regular.ttf")
+  execute("../extract/results.txt", "../clip/", "clip.mp4", "timestamp.txt", "../extract/superchat.txt")
 
 if __name__ == "__main__":
   main()
