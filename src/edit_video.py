@@ -73,9 +73,7 @@ def displayText(date, count_chat, count_comment, yen): # 切り抜き動画中�
   if DISPLAY_DATE:
     display_text += date[:4] + "/" + date[4:6] + "/" + date[6:] + NEWLINE
   if DISPLAY_COUNT and count_chat > 0:
-    display_text += "Chats: " + str(count_chat) + NEWLINE
-  if DISPLAY_COUNT and count_comment > 0:
-    display_text += "Comments: " + str(count_comment) + NEWLINE
+    display_text += "# of chats: " + str(count_chat) + NEWLINE
   if DISPLAY_YEN and yen > 0:
     display_text += "Tips: ¥" + str(yen) + NEWLINE
   if len(display_text) > 0:
