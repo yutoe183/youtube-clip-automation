@@ -11,7 +11,7 @@ def subStrBegin(str, str_begin, str_end): # 該当範囲の文字列を切り出
   end = str[begin:].find(str_end) + begin
   return str[begin:end]
 
-def timeToSecond(str): # 時間表示(str)から秒数(int)に変換
+def timeToSecond(str): # 時間表示(str)から秒数(float)に変換
   SECOND_PER_MINUTE = 60
   MINUTE_PER_HOUR = 60
   DELIMITER = ":" # 時間表示の区切り文字
@@ -21,7 +21,7 @@ def timeToSecond(str): # 時間表示(str)から秒数(int)に変換
   index_delimiter = str.find(DELIMITER)
   minute = int(str[:index_delimiter])
   str = str[index_delimiter + len(DELIMITER):]
-  second = int(str)
+  second = float(str)
   return (hour * MINUTE_PER_HOUR + minute) * SECOND_PER_MINUTE + second
 
 def getResults(path): # ファイルから結果を取得
