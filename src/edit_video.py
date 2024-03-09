@@ -64,7 +64,7 @@ def updateYenChat(results, path): # 結果のうち、スーパーチャット�
     results[i][5] = list_yen_chat[i][2]
     results[i][6] = list_yen_chat[i][0]
 
-def displayText(date, count_chat, count_comment, yen): # 切り抜き動画中に表示する文字
+def displayText(date, count, count_comment, yen): # 切り抜き動画中に表示する文字
   DISPLAY_DATE = True # 投稿日の表示オプション
   DISPLAY_COUNT = True # 該当チャット数の表示オプション
   DISPLAY_YEN = True # スーパーチャット金額(円)の表示オプション
@@ -72,10 +72,10 @@ def displayText(date, count_chat, count_comment, yen): # 切り抜き動画中�
   display_text = ""
   if DISPLAY_DATE:
     display_text += date[:4] + "/" + date[4:6] + "/" + date[6:] + NEWLINE
-  if DISPLAY_COUNT and count_chat > 0:
-    display_text += "# of chats: " + str(count_chat) + NEWLINE
+  if DISPLAY_COUNT and count > 0:
+    display_text += "# of chats: " + str(count) + NEWLINE
   if DISPLAY_YEN and yen > 0:
-    display_text += "Tips: ¥" + str(yen) + NEWLINE
+    display_text += "Tip: ¥" + str(yen) + NEWLINE
   if len(display_text) > 0:
     display_text = display_text[:- len(NEWLINE)]
   return display_text
