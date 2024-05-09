@@ -35,34 +35,42 @@ def secondToTime(second_src): # 秒数(float)から時間表示(str)に変換
   hour = second_src
   return str(hour) + ":" + str(minute).zfill(2) + ":" + str(second).zfill(2)
 
-def getResults(path): # ファイルから結果を取得
-  DELIMITER = " " # 区切り文字
-  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: チャット数, [n][5]: コメント数, [n][6]: 金額, [n][7]: URL
-  with open(path) as f:
-    reader = csv.reader(f, delimiter=DELIMITER)
-    for row in reader:
-      if row[0][:4] != "http": # 行頭に変更がなければ除外
-        results.append([subStrBegin(row[0], "=", "&"), row[4], timeToSecond(row[2]), timeToSecond(row[3]), row[1], 0, 0, row[0][row[0].find("http"):row[0].find("&")]])
-  return results
-
-def getYenChatList(path): # ファイルからスーパーチャットの合計金額、チャット数を取得
-  DELIMITER = " " # 区切り文字
+def getDictDateTitle(path): # ファイルから日付とタイトルの辞書を取得
   if not os.path.isfile(path):
-    return []
-  list_yen_chat = []
+    return {}
+  dict_date_title = {}
+  with open(path) as f:
+    for line in f:
+      dict_date_title[line[:11]] = (line[12:20], line[21:-1])
+  return dict_date_title
+
+def getResults(path, dict_date_title): # ファイルから結果を取得
+  DELIMITER = " " # 区切り文字
+  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: チャット数, [n][5]: コメント数, [n][6]: 金額, [n][7]: タイトル
+  dict_count_comment = {}
   with open(path) as f:
     reader = csv.reader(f, delimiter=DELIMITER)
     for row in reader:
-      list_yen_chat.append((int(row[0]), int(row[1]), int(row[2])))
-  return list_yen_chat
-
-def updateYenChat(results, path): # 結果のうち、スーパーチャットの合計金額、チャット数を正確な値に更新
-  list_yen_chat = getYenChatList(path)
-  len_list = len(list_yen_chat)
-  for i in range(len_list):
-    results[i][4] = list_yen_chat[i][1]
-    results[i][5] = list_yen_chat[i][2]
-    results[i][6] = list_yen_chat[i][0]
+      if len(row) <= 0:
+        continue
+      is_comment = row[4] == "0:00:00" # 終了時刻が0ならコメントと判定
+      id = subStrBegin(row[0], "youtu.be/", "?")
+      if is_comment:
+        dict_count_comment[id] = int(row[1])
+      if row[0][:4] != "http": # 行頭に変更がなければ除外
+        count_chat = 0
+        if not is_comment:
+          count_chat = int(row[1])
+        date = row[5]
+        title = ""
+        if id in dict_date_title:
+          date = dict_date_title[id][0]
+          title = dict_date_title[id][1]
+        results.append([id, date, timeToSecond(row[3]), timeToSecond(row[4]), count_chat, 0, int(row[2]), title])
+  for result in results: # コメント数をすべてに反映
+    if result[0] in dict_count_comment:
+      result[5] = dict_count_comment[result[0]]
+  return results
 
 def displayText(date, count_chat, count_comment, yen): # 切り抜き動画中に表示する文字
   DISPLAY_DATE = True # 投稿日の表示オプション
@@ -85,43 +93,64 @@ def displayText(date, count_chat, count_comment, yen): # 切り抜き動画中�
 def getResolution(results, dir): # 全切り抜きのうち、該当数が最も多い解像度を取得
   LIST_HEIGHT_16_9 = [144, 360, 480, 720, 1080, 1440, 2160, 4320] # 一般的な16:9の解像度(の高さ)一覧
   list_count = [0] * len(LIST_HEIGHT_16_9)
-  for (id, date, _, _, _, _, _, _) in results:
-    path = dir + date + "[" + id + "]_clip0.mp4"
+  list_resolution = []
+  for (id, date, sec_begin, sec_end, _, _, _, _) in results:
+    str_sec_begin = str(int(sec_begin * 1000)).zfill(8)
+    str_sec_end = str(int(sec_end * 1000)).zfill(8)
+    path = dir + date + "[" + id + "]_" + str_sec_begin + "-" + str_sec_end + ".mp4"
     video = VideoFileClip(path)
     index_nearest = numpy.argmin(numpy.abs(numpy.array(LIST_HEIGHT_16_9) - video.h))
     list_count[index_nearest] += 1
+    list_resolution.append((video.h, video.w))
   height = LIST_HEIGHT_16_9[list_count.index(max(list_count))]
   width = int(height * 16 / 9)
-  return (height, width)
+  list_target_resolution = []
+  for (height_original, width_original) in list_resolution:
+    height_target = height_original
+    width_target = width_original
+    if height_target > height or width_target > width or (height_target != height and width_target != width): # 共通解像度に一致するようサイズ変更
+      height_target = min(height, int(width * height_original / width_original))
+      width_target = min(width, int(height * width_original / height_original))
+    list_target_resolution.append((height_target, width_target))
+  return (width, height), list_target_resolution # sizeは(x, y), target_resolutionは(y, x)。不満はmoviepy開発陣へ
 
-def subClip(resolution, text, path, path_font=""): # 各切り抜きのサイズを合わせ、文字とフェード効果を付与
+def subClip(resolution, target_resolution, title, text, path, path_font=""): # 各切り抜きのサイズを合わせ、文字とフェード効果を付与
   SEC_FADEIN = 1 # フェードイン秒数
   SEC_FADEOUT = 1 # フェードアウト秒数
-  (height, width) = resolution
-  videoclip = VideoFileClip(path, target_resolution=resolution) # 指定の解像度で動画読み込み。改良の余地はあるが、現状moviepyのバグで対応不可
+  SEC_AUDIO_FADEIN = 0.1 # 音のフェードイン秒数
+  SEC_AUDIO_FADEOUT = 0.1 # 音のフェードアウト秒数
+  COLOR_FONT = "#ffffff" # フォント色
+  COLOR_BACKGROUND = "#000000c0" # テキストの背景色
+  (width, height) = resolution
+  (height_target, width_target) = target_resolution
+  videoclip = VideoFileClip(path, target_resolution=target_resolution).set_position((int((width - width_target) / 2), int((height - height_target) / 2))) # 指定の解像度で動画読み込み
   fontsize = int(height / 20)
+  titlesize = int(fontsize / 2)
+  position_title = (16, 8)
+  position_text = (16, 16 + titlesize + 1)
+  duration = videoclip.duration
   if path_font == "":
-    textclip = TextClip(txt=text, fontsize=fontsize, color="#ffffff", bg_color="#000000c0").set_position((16, 16)).set_duration(videoclip.duration)
+    titleclip = TextClip(txt=title, fontsize=titlesize, color=COLOR_FONT, bg_color=COLOR_BACKGROUND).set_position(position_title).set_duration(duration)
+    textclip = TextClip(txt=text, fontsize=fontsize, color=COLOR_FONT, bg_color=COLOR_BACKGROUND).set_position(position_text).set_duration(duration)
   else:
-    textclip = TextClip(txt=text, font=path_font, fontsize=fontsize, color="#ffffff", bg_color="#000000c0").set_position((16, 16)).set_duration(videoclip.duration)
-  return CompositeVideoClip(clips=[videoclip, textclip]).fadein(SEC_FADEIN).fadeout(SEC_FADEOUT)
+    titleclip = TextClip(txt=title, font=path_font, fontsize=titlesize, color=COLOR_FONT, bg_color=COLOR_BACKGROUND).set_position(position_title).set_duration(duration)
+    textclip = TextClip(txt=text, font=path_font, fontsize=fontsize, color=COLOR_FONT, bg_color=COLOR_BACKGROUND).set_position(position_text).set_duration(duration)
+  return CompositeVideoClip(clips=[videoclip, titleclip, textclip], size=resolution).fadein(SEC_FADEIN).fadeout(SEC_FADEOUT).audio_fadein(SEC_AUDIO_FADEIN).audio_fadeout(SEC_AUDIO_FADEOUT)
 
 def mergeClip(results, dir, path_font): # 全切り抜きを結合
   list_video = []
-  resolution = getResolution(results, dir)
+  resolution, list_target_resolution = getResolution(results, dir)
   len_results = len(results)
-  count_same_id = 0
   for i in range(len_results):
-    (id, date, sec_begin, sec_end, count_chat, count_comment, yen, url) = results[i]
-    path = dir + date + "[" + id + "]_clip" + str(count_same_id) + ".mp4"
+    (id, date, sec_begin, sec_end, count_chat, count_comment, yen, title) = results[i]
+    str_sec_begin = str(int(sec_begin * 1000)).zfill(8)
+    str_sec_end = str(int(sec_end * 1000)).zfill(8)
+    path = dir + date + "[" + id + "]_" + str_sec_begin + "-" + str_sec_end + ".mp4"
     text = displayText(date, count_chat, count_comment, yen)
-    list_video.append(subClip(resolution, text, path, path_font))
-    count_same_id += 1
+    list_video.append(subClip(resolution, list_target_resolution[i], title, text, path, path_font))
     id_next = ""
     if i < len_results - 1:
       id_next = results[i + 1][0]
-    if id != id_next:
-      count_same_id = 0
   return concatenate_videoclips(list_video)
 
 def generateTimestamp(results): # タイムスタンプ用の文字列を生成 各切り抜きの開始時刻、投稿日、URL
@@ -130,15 +159,16 @@ def generateTimestamp(results): # タイムスタンプ用の文字列を生成 
   len_results = len(results)
   sec_sum = 0
   for i in range(len_results):
-    (_, date, sec_begin, sec_end, _, _, _, url) = results[i]
+    (id, date, sec_begin, sec_end, _, _, _, _) = results[i]
+    url = "https://youtu.be/" + id + "?t=" + str(int(sec_begin)) + "s"
     timestamp += secondToTime(sec_sum) + " " + str(i + 1) + ". " + date[:4] + "/" + date[4:6] + "/" + date[6:] + " "
-    timestamp += url + "&t=" + str(int(sec_begin)) + "s" + NEWLINE
+    timestamp += url + NEWLINE
     sec_sum += sec_end - sec_begin
   return timestamp
 
-def execute(path_results, dir_video, path_dst_video, path_dst_timestamp, path_superchat="", path_font=""):
-  results = getResults(path_results)
-  updateYenChat(results, path_superchat)
+def execute(path_results, path_list_date_title, dir_video, path_dst_video, path_dst_timestamp, path_font=""):
+  dict_date_title = getDictDateTitle(path_list_date_title)
+  results = getResults(path_results, dict_date_title)
   video = mergeClip(results, dir_video, path_font)
   video.write_videofile(path_dst_video, codec="mpeg4", bitrate="1000000000")
   timestamp = generateTimestamp(results)
@@ -146,7 +176,7 @@ def execute(path_results, dir_video, path_dst_video, path_dst_timestamp, path_su
     f.write(timestamp)
 
 def main():
-  execute("../extract/results.txt", "../clip/", "clip.mp4", "timestamp.txt", "../extract/superchat.txt", "../../../src/font/MPLUSRounded1c-Regular.ttf")
+  execute("../extract/results.txt", "../extract/list_date_title.txt", "../clip/", "clip.mp4", "timestamp.txt", "../../../src/font/MPLUSRounded1c-Regular.ttf")
 
 if __name__ == "__main__":
   main()

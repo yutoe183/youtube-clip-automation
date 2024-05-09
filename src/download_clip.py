@@ -1,5 +1,6 @@
 import sys # argv
 import os # remove, path.isfile
+import operator # itemgetter
 import csv # reader
 import yt_dlp # YoutubeDL
 from moviepy.editor import *
@@ -26,28 +27,33 @@ def timeToSecond(str): # 時間表示(str)から秒数(float)に変換
 
 def getResults(path): # ファイルから結果を取得
   DELIMITER = " " # 区切り文字
-  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: URL
+  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数
   with open(path) as f:
     reader = csv.reader(f, delimiter=DELIMITER)
     for row in reader:
+      if len(row) <= 0:
+        continue
       if row[0][:4] != "http": # 行頭に変更がなければ除外
-        results.append((subStrBegin(row[0], "=", "&"), row[4], timeToSecond(row[2]), timeToSecond(row[3]), row[0][row[0].find("http"):row[0].find("&")]))
+        results.append((subStrBegin(row[0], "youtu.be/", "?"), row[5], timeToSecond(row[3]), timeToSecond(row[4])))
   return results
 
-def downloadClip(results, remove_original): # 各動画のダウンロードと切り抜き
-  OPTION = {
-    "outtmpl": "%(upload_date)s[%(id)s].%(ext)s", # 出力形式 投稿日[動画ID].mp4
+def downloadClip(results, dir_download, dir_clip, remove_original): # 各動画のダウンロードと切り抜き
+  option = {
+    "outtmpl": dir_download + "%(upload_date)s[%(id)s].%(ext)s", # 出力形式 投稿日[動画ID].mp4
     "ignoreerrors": True, # エラーを無視して続行
   }
   MAX_RETRY_DOWNLOAD = 6 # ダウンロードに失敗した際の最大再試行回数
+  results.sort(key=operator.itemgetter(1, 2, 3)) # 並び順に関わらず、動画ごとにすべての切り抜きを作成
   len_results = len(results)
-  with yt_dlp.YoutubeDL(OPTION) as ydl:
-    count_same_id = 0
+  with yt_dlp.YoutubeDL(option) as ydl:
     for i in range(len_results):
-      (id, date, sec_begin, sec_end, url) = results[i]
+      (id, date, sec_begin, sec_end) = results[i]
+      url = "https://www.youtube.com/watch?v=" + id
       filename = date + "[" + id + "]"
-      path_download = filename + ".mp4"
-      path_clip = filename + "_clip" + str(count_same_id) + ".mp4"
+      path_download = dir_download + filename + ".mp4"
+      str_sec_begin = str(int(sec_begin * 1000)).zfill(8)
+      str_sec_end = str(int(sec_end * 1000)).zfill(8)
+      path_clip = dir_clip + filename + "_" + str_sec_begin + "-" + str_sec_end + ".mp4"
       if not os.path.isfile(path_clip): # 出力先ファイルが既に存在する場合は動画生成しない
         retry_download = MAX_RETRY_DOWNLOAD
         while not os.path.isfile(path_download) and retry_download > 0: # 存在しない場合のみダウンロード
@@ -57,23 +63,21 @@ def downloadClip(results, remove_original): # 各動画のダウンロードと�
           if sec_begin < sec_end: # 時刻指定に誤りがある場合はスキップ
             videoclip = VideoFileClip(path_download).subclip(sec_begin, sec_end)
             videoclip.write_videofile(path_clip, codec="mpeg4", bitrate="1000000000")
-      count_same_id += 1
       id_next = ""
       if i < len_results - 1:
         id_next = results[i + 1][0]
       if (id != id_next):
-        count_same_id = 0
         if remove_original: # 用済みになった動画は、オプションがTrueなら削除
           if os.path.isfile(path_download):
             os.remove(path_download)
 
-def execute(path, remove_original):
-  results = getResults(path)
-  downloadClip(results, remove_original)
+def execute(path_results, dir_download, dir_clip, remove_original):
+  results = getResults(path_results)
+  downloadClip(results, dir_download, dir_clip, remove_original)
 
 def main():
   remove_original = len(sys.argv) > 1 and (sys.argv[1] == "-d" or sys.argv[1] == "-D") # ダウンロードした元動画を削除するか
-  execute("../extract/results.txt", remove_original)
+  execute("extract/results.txt", "download/", "clip/", remove_original)
 
 if __name__ == "__main__":
   main()
