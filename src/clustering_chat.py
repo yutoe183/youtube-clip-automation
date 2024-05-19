@@ -26,6 +26,9 @@ def getDate(filename): # ファイル名から投稿日を抽出
 def getTitle(line): # 生データからタイトルを抽出
   return subStrBegin(line, '"title": "', '"')
 
+def getReleaseDate(line): # 生データから公開日を抽出
+  return subStrBegin(line, '"release_date": "', '"')
+
 def getSecond(line): # 生データから時刻を抽出
   str = subStrBegin(line, '"videoOffsetTimeMsec": "', '"')[:-3] # mili sec で記載されているため下3文字削る
   if str == "":
@@ -95,12 +98,15 @@ def secondToTime(second_src): # 秒数(int)から時間表示(str)に変換
   hour = second_src
   return str(hour) + ":" + str(minute).zfill(2) + ":" + str(second).zfill(2)
 
+def timeToDisplayTime(str): # 時間を表示用に変換(yyyyMMdd -> yyyy/MM/dd)
+  return str[0:4] + "/" + str[4:6] + "/" + str[6:8]
+
 def clusteringChat(dir, list_query): # チャットを1事象ごとにクラスタリング
   SEC_CLUSTERING = 90 # チャット間隔が90秒未満の場合、同じ事象に対するコメントだと判定(初期値)
   SEC_PRE = 15 # lv0チャット1個目の何秒前からチャット数を数えるか
   MAX_EXAMPLE_CHAT = 24 # 参考例として出力する該当チャット数の最大値
   MAX_EXAMPLE_COMMENT = 24 # 参考例として出力する該当コメント数の最大値
-  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: チャット/コメント数, [n][5][m]: チャット/コメント例 (m <= 12), [n][6]: 投げ銭金額
+  results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: チャット/コメント数, [n][5][m]: チャット/コメント例 (m <= 12), [n][6]: 投げ銭金額, [n][7]: 公開日
   list_date_title = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: タイトル
 
   query_lv = [""] * 3 # 検索条件厳しい順
@@ -116,17 +122,22 @@ def clusteringChat(dir, list_query): # チャットを1事象ごとにクラス�
     buf_lv1_count = [(0, 0)] * BUF_SIZE # query_lv[1] に該当するチャットの秒数と金額を保持するリングバッファ
     buf_lv1_itr = 0 # 上記リングバッファのイテレータ
     sec_end_same = 0 # 同じ事象だと判定される期限
+    release_date = "00000000"
     with open(dir + filename) as f:
     # 入力データは、1チャットにつき1行。コメントは全データが1行
       id = getId(filename)
       date = getDate(filename)
+      if date.isdecimal() and int(release_date) < int(date): # 投稿日 < 公開日 が成り立つように。ただし、infoファイルから読み込まれるはずなので、このif文の有無で結果は変わらないはず
+        release_date = date
       if isInfo(filename): # コメントの場合、開始終了秒数を0として追加
         for line in f:
           list_date_title.append((id, date, getTitle(line)))
+          if getReleaseDate(line) != "":
+            release_date = getReleaseDate(line)
           if query_lv[0] != "":
             list_comment = getCommentList(line, query_lv[0])
             if len(list_comment) > 0: # コメントに検索文字列が含まれていない場合は除外
-              results.append([id, date, 0, 0, len(list_comment), list_comment[0:MAX_EXAMPLE_COMMENT], 0])
+              results.append([id, date, 0, 0, len(list_comment), list_comment[0:MAX_EXAMPLE_COMMENT], 0, release_date])
       else: # チャットの場合
         for line in f:
           if not isValidChat(line): # チャットが既存データと重複する場合は除外
@@ -148,7 +159,7 @@ def clusteringChat(dir, list_query): # チャットを1事象ごとにクラス�
                 break
               count_pre += 1
               yen_pre += buf_lv1_count[itr][1]
-            results.append([id, date, chat_second, chat_second, count_pre, [], yen_pre])
+            results.append([id, date, chat_second, chat_second, count_pre, [], yen_pre, release_date])
             sec_end_same = 0
             is_same = True
           if is_same:
@@ -169,14 +180,14 @@ def writeResults(results, path): # 結果を出力: URL チャット/コメン�
   NEWLINE = "\n" # 改行文字
   SEC_BUFFER = 30 # チャット1個目の何秒前から動画を確認するか
   with open(path, "w") as f:
-    for (id, date, sec_begin, sec_end, count, list_text, yen) in results:
+    for (id, _, sec_begin, sec_end, count, list_text, yen, release_date) in results:
       second = max(sec_begin - SEC_BUFFER, 0)
       f.write("https://youtu.be/" + id + "?t=" + str(second) + "s" + DELIMITER)
       f.write(str(count) + DELIMITER)
       f.write(str(int(yen)) + DELIMITER)
       f.write(secondToTime(sec_begin) + DELIMITER)
       f.write(secondToTime(sec_end) + DELIMITER)
-      f.write(date + DELIMITER)
+      f.write(timeToDisplayTime(release_date) + DELIMITER)
       for text in list_text:
         f.write(text + DELIMITER)
       f.write(NEWLINE)

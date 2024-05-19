@@ -25,7 +25,16 @@ def timeToSecond(str): # 時間表示(str)から秒数(float)に変換
   second = float(str)
   return (hour * MINUTE_PER_HOUR + minute) * SECOND_PER_MINUTE + second
 
-def getResults(path): # ファイルから結果を取得
+def getDictDateTitle(path): # ファイルから日付とタイトルの辞書を取得
+  if not os.path.isfile(path):
+    return {}
+  dict_date_title = {}
+  with open(path) as f:
+    for line in f:
+      dict_date_title[line[:11]] = (line[12:20], line[21:-1])
+  return dict_date_title
+
+def getResults(path, dict_date_title): # ファイルから結果を取得
   DELIMITER = " " # 区切り文字
   results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数
   with open(path) as f:
@@ -34,7 +43,11 @@ def getResults(path): # ファイルから結果を取得
       if len(row) <= 0:
         continue
       if row[0][:4] != "http": # 行頭に変更がなければ除外
-        results.append((subStrBegin(row[0], "youtu.be/", "?"), row[5], timeToSecond(row[3]), timeToSecond(row[4])))
+        id = subStrBegin(row[0], "youtu.be/", "?")
+        date = row[5]
+        if id in dict_date_title:
+          date = dict_date_title[id][0]
+        results.append((id, date, timeToSecond(row[3]), timeToSecond(row[4])))
   return results
 
 def downloadClip(results, dir_download, dir_clip, remove_original): # 各動画のダウンロードと切り抜き
@@ -71,13 +84,14 @@ def downloadClip(results, dir_download, dir_clip, remove_original): # 各動画�
           if os.path.isfile(path_download):
             os.remove(path_download)
 
-def execute(path_results, dir_download, dir_clip, remove_original):
-  results = getResults(path_results)
+def execute(path_results, path_list_date_title, dir_download, dir_clip, remove_original):
+  dict_date_title = getDictDateTitle(path_list_date_title)
+  results = getResults(path_results, dict_date_title)
   downloadClip(results, dir_download, dir_clip, remove_original)
 
 def main():
   remove_original = len(sys.argv) > 1 and (sys.argv[1] == "-d" or sys.argv[1] == "-D") # ダウンロードした元動画を削除するか
-  execute("extract/results.txt", "download/", "clip/", remove_original)
+  execute("extract/results.txt", "extract/list_date_title.txt", "download/", "clip/", remove_original)
 
 if __name__ == "__main__":
   main()
