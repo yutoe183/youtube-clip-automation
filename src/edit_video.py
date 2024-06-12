@@ -1,4 +1,4 @@
-import os # path.isfile
+import os # path.isfile, rename
 import csv # reader
 import numpy # array, argmin, abs
 from moviepy.editor import *
@@ -34,6 +34,15 @@ def secondToTime(second_src): # 秒数(float)から時間表示(str)に変換
   second_src = int((second_src - minute) / MINUTE_PER_HOUR)
   hour = second_src
   return str(hour) + ":" + str(minute).zfill(2) + ":" + str(second).zfill(2)
+
+def getVideoPath(filename): # 拡張子も含めた動画のパスを取得
+  list_extension = ("mp4", "webm", "mkv")
+  for extension in list_extension:
+    path = filename + "." + extension
+    if os.path.isfile(path):
+      return path
+  print("file not found: " + filename)
+  return ""
 
 def getDictDateTitle(path): # ファイルから日付とタイトルの辞書を取得
   if not os.path.isfile(path):
@@ -97,7 +106,7 @@ def getResolution(results, dir): # 全切り抜きのうち、該当数が最も
   for (id, date, sec_begin, sec_end, _, _, _, _, _) in results:
     str_sec_begin = str(int(sec_begin * 1000)).zfill(8)
     str_sec_end = str(int(sec_end * 1000)).zfill(8)
-    path = dir + date + "[" + id + "]_" + str_sec_begin + "-" + str_sec_end + ".mp4"
+    path = getVideoPath(dir + date + "[" + id + "]_" + str_sec_begin + "-" + str_sec_end)
     video = VideoFileClip(path)
     index_nearest = numpy.argmin(numpy.abs(numpy.array(LIST_HEIGHT_16_9) - video.h))
     list_count[index_nearest] += 1
@@ -137,33 +146,59 @@ def subClip(resolution, target_resolution, title, text, path, path_font=""): # �
     textclip = TextClip(txt=text, font=path_font, fontsize=fontsize, color=COLOR_FONT, bg_color=COLOR_BACKGROUND).set_position(position_text).set_duration(duration)
   return CompositeVideoClip(clips=[videoclip.audio_fadein(SEC_AUDIO_FADEIN).audio_fadeout(SEC_AUDIO_FADEOUT), titleclip, textclip], size=resolution).fadein(SEC_FADEIN).fadeout(SEC_FADEOUT)
 
-def mergeClip(results, dir, path_font): # 全切り抜きを結合
+def mergeClip(results, dir, path_dst_video, path_font): # 全切り抜きを結合
+  SEC_PART = 60 * 12 # まとめて処理できる最大秒数。この秒数ごとの動画を生成し、最後に結合する
   list_video = []
   list_duration = []
   resolution, list_target_resolution = getResolution(results, dir)
   len_results = len(results)
+  path_dst_video_pre = path_dst_video[:path_dst_video.rfind(".")] # 拡張子より前
+  path_dst_video_extension = path_dst_video[path_dst_video.rfind("."):]
+  part_current = 0
+  duration_current = 0
   for i in range(len_results):
     (id, date, sec_begin, sec_end, count_chat, count_comment, yen, title, release_date) = results[i]
     str_sec_begin = str(int(sec_begin * 1000)).zfill(8)
     str_sec_end = str(int(sec_end * 1000)).zfill(8)
-    path = dir + date + "[" + id + "]_" + str_sec_begin + "-" + str_sec_end + ".mp4"
+    path = getVideoPath(dir + date + "[" + id + "]_" + str_sec_begin + "-" + str_sec_end)
     text = displayText(release_date, count_chat, count_comment, yen)
     list_video.append(subClip(resolution, list_target_resolution[i], title, text, path, path_font))
-    list_duration.append(list_video[i].duration)
-    id_next = ""
-    if i < len_results - 1:
-      id_next = results[i + 1][0]
-  return concatenate_videoclips(list_video), list_duration
+    list_duration.append(list_video[-1].duration)
+    duration_current += list_video[-1].duration
+    if duration_current >= SEC_PART or i == len_results - 1: # まとめて処理できる許容量を超えた場合、現在のリスト内の動画をすべて結合して出力
+      path_current = path_dst_video_pre + "_part" + str(part_current) + path_dst_video_extension
+      concatenate_videoclips(list_video).write_videofile(path_current, codec="mpeg4", bitrate="1000000000")
+      list_video.clear()
+      part_current += 1
+      duration_current = 0
+  if part_current == 1: # 許容量に到達しなかった場合は結合処理が不要
+    os.rename(path_dst_video_pre + "_part0" + path_dst_video_extension, path_dst_video)
+  else:
+    list_part = []
+    for i in range(part_current):
+      path_current = path_dst_video_pre + "_part" + str(i) + path_dst_video_extension
+      list_part.append(VideoFileClip(path_current))
+    concatenate_videoclips(list_part).write_videofile(path_dst_video, codec="mpeg4", bitrate="1000000000")
+  return list_duration
 
 def generateTimestamp(results, list_duration): # タイムスタンプ用の文字列を生成 各切り抜きの開始時刻、投稿日、URL
   NEWLINE = "\n" # 改行文字
+  SEC_CLUSTERING = 90 # 間隔が90秒未満の場合、同じ事象に対する切り抜きだと判定(初期値)。その場合、それらのタイムスタンプのカウントを同じにする (例: 1. 2-1. 2-2. 3. 4. ...)
   timestamp = ""
   len_results = len(results)
   sec_sum = 0
+  count_num = 0
+  count_sequence = 0
   for i in range(len_results):
     (id, date, sec_begin, _, _, _, _, _, release_date) = results[i]
     url = "https://youtu.be/" + id + "?t=" + str(int(sec_begin)) + "s"
-    timestamp += secondToTime(sec_sum) + " " + str(i + 1) + ". " + release_date + " "
+    if i > 0 and id == results[i - 1][0] and sec_begin < results[i - 1][3] + SEC_CLUSTERING:
+      count_sequence += 1
+      timestamp += secondToTime(sec_sum) + " " + str(count_num) + "-" + str(count_sequence) + ". " + release_date + " "
+    else:
+      count_num += 1
+      count_sequence = 1
+      timestamp += secondToTime(sec_sum) + " " + str(count_num) + ". " + release_date + " "
     timestamp += url + NEWLINE
     sec_sum += list_duration[i] # 実際の動画の duration と sec_end - sec_begin では誤差(前者が最大+0.05s程度)が発生し、累積すると数秒単位の誤差になってしまう。これを防ぐため、実際の動画の duration を使う
   return timestamp
@@ -171,8 +206,7 @@ def generateTimestamp(results, list_duration): # タイムスタンプ用の文�
 def execute(path_results, path_list_date_title, dir_video, path_dst_video, path_dst_timestamp, path_font=""):
   dict_date_title = getDictDateTitle(path_list_date_title)
   results = getResults(path_results, dict_date_title)
-  video, list_duration = mergeClip(results, dir_video, path_font)
-  video.write_videofile(path_dst_video, codec="mpeg4", bitrate="1000000000")
+  list_duration = mergeClip(results, dir_video, path_dst_video, path_font)
   timestamp = generateTimestamp(results, list_duration)
   with open(path_dst_timestamp, "w") as f:
     f.write(timestamp)
