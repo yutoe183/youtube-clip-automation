@@ -22,7 +22,7 @@ fi
 if [ $# -ge 3 ] && [ ! -e "$1"/extract/results.txt ]
 then
   mkdir -p "$1"/extract
-  cd "$1"/extract
+  cd "$1"
   if [ $# -ge 4 ]
   then
     python "${current_dir}"/src/clustering_chat.py "$3" "$4"

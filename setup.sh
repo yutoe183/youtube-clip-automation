@@ -5,7 +5,7 @@
 python_version=${1:-3}
 
 sudo apt update
-sudo apt install -y "python${python_version}-venv" imagemagick
+sudo apt install -y "python${python_version}-venv" imagemagick ffmpeg
 
 mkdir -p {src,data,venv}
 rm -fr venv/yt-dlp_moviepy
