@@ -207,7 +207,7 @@ def execute(dir_src, path_results, path_list_date_title, list_query):
   writeListDateTitle(list_date_title, path_list_date_title)
 
 def main():
-  execute("../live_chat/", "results.txt", "list_date_title.txt", sys.argv[1:])
+  execute("live_chat/", "extract/results.txt", "extract/list_date_title.txt", sys.argv[1:])
 
 if __name__ == "__main__":
   main()
