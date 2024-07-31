@@ -26,6 +26,17 @@ def timeToSecond(str): # 時間表示(str)から秒数(float)に変換
   second = float(str)
   return (hour * MINUTE_PER_HOUR + minute) * SECOND_PER_MINUTE + second
 
+def secondToTime(second_src): # 秒数(float)から時間表示(str)に変換
+  SECOND_PER_MINUTE = 60
+  MINUTE_PER_HOUR = 60
+  second_src = round(second_src) # 小数点以下は四捨五入
+  second = second_src % SECOND_PER_MINUTE
+  second_src = int((second_src - second) / SECOND_PER_MINUTE)
+  minute = second_src % MINUTE_PER_HOUR
+  second_src = int((second_src - minute) / MINUTE_PER_HOUR)
+  hour = second_src
+  return str(hour) + ":" + str(minute).zfill(2) + ":" + str(second).zfill(2)
+
 def getVideoPath(filename): # 拡張子も含めた動画のパスを取得
   list_extension = ("mp4", "webm", "mkv")
   for extension in list_extension:
@@ -47,20 +58,37 @@ def getDictDateTitle(path): # ファイルから日付とタイトルの辞書�
 def getResults(path, dict_date_title): # ファイルから結果を取得
   DELIMITER = " " # 区切り文字
   results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数
+  count_clip = 0
+  count_memo = 0
   with open(path) as f:
     reader = csv.reader(f, delimiter=DELIMITER)
     for row in reader:
-      if len(row) <= 0:
+      if len(row) < 6:
         continue
-      if row[0][:4] != "http": # 行頭に変更がなければ除外
+      if row[0][:4] != "http" and "http" in row[0]: # 行頭に変更がなければ除外
         id = subStrBegin(row[0], "youtu.be/", "?")
         date = row[5]
         if id in dict_date_title:
           date = dict_date_title[id][0]
         results.append((id, date, timeToSecond(row[3]), timeToSecond(row[4])))
+        count_clip += 1
+        if row[0][:row[0].find("http")].isdecimal(): # 行頭のメモカウント機能
+          count_memo += int(row[0][:row[0].find("http")])
+  print("count clip: " + str(count_clip))
+  if count_memo > 0:
+    print("count memo: " + str(count_memo))
   return results
 
-def downloadAllAndClip(results, dir_download, dir_clip, remove_original): # 各動画のダウンロードと切り抜き
+def printDurationFromResults(results):
+  duration_sum = 0
+  print("[", end="")
+  for (_, _, sec_begin, sec_end) in results:
+    print(secondToTime(sec_end - sec_begin), end=", ")
+    duration_sum += sec_end - sec_begin
+  print("]")
+  print("total: " + secondToTime(duration_sum))
+
+def downloadAllAndClip(results, dir_download, dir_clip, remove_original, cookiefile): # 各動画のダウンロードと切り抜き
   option = {
     "outtmpl": dir_download + "%(upload_date)s[%(id)s].%(ext)s", # 出力形式 投稿日[動画ID].mp4
     #"format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4] / bv*+ba/b", # Download the best mp4 video available, or the best video if no mp4 available
@@ -95,11 +123,11 @@ def downloadAllAndClip(results, dir_download, dir_clip, remove_original): # 各�
         if os.path.isfile(path_download):
           os.remove(path_download)
 
-def downloadOnlyClip(results, dir_download, dir_clip, remove_original): # 切り抜き部分のみをダウンロード
+def downloadOnlyClip(results, dir_download, dir_clip, remove_original, cookiefile): # 切り抜き部分のみをダウンロード
   MAX_RETRY_DOWNLOAD = 6 # ダウンロードに失敗した際の最大再試行回数
   SEC_INTERVAL_BEGIN_DOWNLOAD = 12 # 切り抜き前に指定秒数を追加した部分をダウンロード
   SEC_INTERVAL_END_DOWNLOAD = 4 # 切り抜き後に指定秒数を追加した部分をダウンロード
-  SEC_INTERVAL_BEGIN_CLIP = 8 # 前に指定秒数以上が存在するダウンロード動画から切り抜きを作成
+  SEC_INTERVAL_BEGIN_CLIP = 4 # 前に指定秒数以上が存在するダウンロード動画から切り抜きを作成
   SEC_INTERVAL_END_CLIP = 0.1 # 後に指定秒数以上が存在するダウンロード動画から切り抜きを作成
   results.sort(key=operator.itemgetter(1, 0, 2, 3)) # 日付順にダウンロード
   len_results = len(results)
@@ -150,12 +178,15 @@ def downloadOnlyClip(results, dir_download, dir_clip, remove_original): # 切り
           "outtmpl": filename_download + ".%(ext)s", # 出力形式 投稿日[動画ID]_開始ミリ秒-終了ミリ秒.mp4
           #"format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4] / bv*+ba/b", # Download the best mp4 video available, or the best video if no mp4 available
           "ignoreerrors": True, # エラーを無視して続行
-          "download_ranges": lambda info_dict, ydl: [{"start_time": sec_begin_download, "end_time": sec_end_download}]
+          "download_ranges": lambda info_dict, ydl: [{"start_time": sec_begin_download, "end_time": sec_end_download}],
+          "cookiefile": cookiefile
         }
         with yt_dlp.YoutubeDL(option) as ydl:
           ydl.download([url])
       if path_download != "":
         videoclip = VideoFileClip(path_download) # ダウンロードの開始終了秒数をyt-dlpが厳守しない(少し長めになる)ので、切り抜き位置を調整する。現在は、終了秒数が一致している想定で調整している
+        if sec_end_download <= 0:
+          sec_end_download = videoclip.duration
         sec_begin_clip = videoclip.duration - sec_end_download + sec_begin # = videoclip.duration - (sec_end_download - sec_begin_download) + (sec_begin - sec_begin_download)
         sec_end_clip = videoclip.duration - sec_end_download + sec_end
         subclip = videoclip.subclip(sec_begin_clip, sec_end_clip)
@@ -164,13 +195,14 @@ def downloadOnlyClip(results, dir_download, dir_clip, remove_original): # 切り
       for downloaded in glob.glob(glob.escape(filename_download_pre) + "*"):
         os.remove(downloaded)
 
-def execute(path_results, path_list_date_title, dir_download, dir_clip, download_all, remove_original):
+def execute(path_results, path_list_date_title, dir_download, dir_clip, download_all, remove_original, cookiefile):
   dict_date_title = getDictDateTitle(path_list_date_title)
   results = getResults(path_results, dict_date_title)
+  printDurationFromResults(results)
   if download_all:
-    downloadAllAndClip(results, dir_download, dir_clip, remove_original)
+    downloadAllAndClip(results, dir_download, dir_clip, remove_original, cookiefile)
   else:
-    downloadOnlyClip(results, dir_download, dir_clip, remove_original)
+    downloadOnlyClip(results, dir_download, dir_clip, remove_original, cookiefile)
 
 def main():
   download_all = False # 全編をダウンロードするか
@@ -178,7 +210,7 @@ def main():
   for arg in sys.argv[1:]:
     download_all = download_all or (arg == "-a" or arg == "-A" or arg == "--all")
     remove_original = remove_original or (arg == "-d" or arg == "-D" or arg == "--delete")
-  execute("extract/results.txt", "extract/list_date_title.txt", "download/", "clip/", download_all, remove_original)
+  execute("extract/results.txt", "extract/list_date_title.txt", "download/", "clip/", download_all, remove_original, os.path.dirname(__file__) + "/auth/cookies.txt")
 
 if __name__ == "__main__":
   main()
