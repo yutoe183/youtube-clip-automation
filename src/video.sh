@@ -8,7 +8,6 @@ cd "$1"
 mkdir download clip
 python "${current_dir}"/src/download_clip.py ${@:2}
 mkdir dst
-cd dst
 python "${current_dir}"/src/edit_video.py
 cd "${current_dir}"
 deactivate
