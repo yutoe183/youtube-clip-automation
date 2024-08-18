@@ -10,12 +10,12 @@ then
   cd "$1"/live_chat
   if [ $# -ge 6 ]
   then
-    yt-dlp --skip-download --write-subs --write-comments --dateafter $5 --datebefore $6 -o "%(upload_date)s[%(id)s]" "https://www.youtube.com/channel/$2"
+    yt-dlp --skip-download --write-subs --write-comments --cookies "${current_dir}"/src/auth/cookies.txt --dateafter $5 --datebefore $6 -o "%(upload_date)s[%(id)s]" "https://www.youtube.com/channel/$2"
   elif [ $# == 5 ]
   then
-    yt-dlp --skip-download --write-subs --write-comments --dateafter $5 -o "%(upload_date)s[%(id)s]" "https://www.youtube.com/channel/$2"
+    yt-dlp --skip-download --write-subs --write-comments --cookies "${current_dir}"/src/auth/cookies.txt --dateafter $5 -o "%(upload_date)s[%(id)s]" "https://www.youtube.com/channel/$2"
   else
-    yt-dlp --skip-download --write-subs --write-comments -o "%(upload_date)s[%(id)s]" "https://www.youtube.com/channel/$2"
+    yt-dlp --skip-download --write-subs --write-comments --cookies "${current_dir}"/src/auth/cookies.txt -o "%(upload_date)s[%(id)s]" "https://www.youtube.com/channel/$2"
   fi
   cd "${current_dir}"
 fi

@@ -121,10 +121,14 @@ def generateTimestamp(results, list_duration): # タイムスタンプ用の文�
   SEC_CLUSTERING = 90 # 間隔が90秒未満の場合、同じ事象に対する切り抜きだと判定(初期値)。その場合、それらのタイムスタンプのカウントを同じにする (例: 1. 2-1. 2-2. 3. 4. ...)
   timestamp = ""
   timestamp1 = ""
+  timestamp_month = ""
+  timestamp_year = ""
   len_results = len(results)
   sec_sum = 0
   count_num = 0
   count_sequence = 0
+  current_month = "0000/00"
+  current_year = "0000"
   for i in range(len_results):
     (id, date, sec_begin, _, _, _, _, _, release_date) = results[i]
     url = "https://youtu.be/" + id + "?t=" + str(int(sec_begin)) + "s"
@@ -137,9 +141,17 @@ def generateTimestamp(results, list_duration): # タイムスタンプ用の文�
       timestamp += secondToTime(sec_sum) + " " + str(count_num) + ". " + release_date + " "
       timestamp1 += secondToTime(sec_sum) + " " + str(count_num) + ". " + release_date + " "
       timestamp1 += url + NEWLINE
+      if release_date[:7] != current_month:
+        current_month = release_date[:7]
+        timestamp_month += secondToTime(sec_sum) + " " + str(count_num) + ". " + current_month + " "
+        timestamp_month += url + NEWLINE
+        if release_date[:4] != current_year:
+          current_year = release_date[:4]
+          timestamp_year += secondToTime(sec_sum) + " " + str(count_num) + ". " + current_year + " "
+          timestamp_year += url + NEWLINE
     timestamp += url + NEWLINE
     sec_sum += list_duration[i] # 実際の動画の duration と sec_end - sec_begin では誤差(前者が最大+0.05s程度)が発生し、累積すると数秒単位の誤差になってしまう。これを防ぐため、実際の動画の duration を使う
-  return timestamp, timestamp1
+  return timestamp, timestamp1, timestamp_month, timestamp_year
 
 def displayText(release_date, count_chat, count_comment, yen): # 切り抜き動画中に表示する文字
   DISPLAY_DATE = True # 公開日の表示オプション
@@ -172,7 +184,6 @@ def subClip(resolution, target_resolution, title, text, path, path_font=""): # �
   fontsize = int(height / 20)
   titlesize = int(fontsize / 2)
   position_title = (16, 8)
-  #position_text = (16, 16 + titlesize + 5)
   duration = videoclip.duration
   if path_font == "":
     titleclip = TextClip(txt=title, fontsize=titlesize, color=COLOR_FONT, bg_color=COLOR_BACKGROUND).set_position(position_title).set_duration(duration)
@@ -237,11 +248,15 @@ def execute(path_results, path_list_date_title, dir_video, path_dst_video, path_
   results = getResults(path_results, dict_date_title)
   resolution, list_target_resolution, list_duration = getResolution(results, dir_video)
   print("total: " + secondToTime(sum(list_duration)))
-  timestamp, timestamp1 = generateTimestamp(results, list_duration)
+  timestamp, timestamp1, timestamp_month, timestamp_year = generateTimestamp(results, list_duration)
   with open(path_dst_timestamp, "w") as f:
     f.write(timestamp)
   with open(path_dst_timestamp[:path_dst_timestamp.rfind(".")] + "1" + path_dst_timestamp[path_dst_timestamp.rfind("."):], "w") as f:
     f.write(timestamp1)
+  with open(path_dst_timestamp[:path_dst_timestamp.rfind(".")] + "_month" + path_dst_timestamp[path_dst_timestamp.rfind("."):], "w") as f:
+    f.write(timestamp_month)
+  with open(path_dst_timestamp[:path_dst_timestamp.rfind(".")] + "_year" + path_dst_timestamp[path_dst_timestamp.rfind("."):], "w") as f:
+    f.write(timestamp_year)
   mergeClip(results, resolution, list_target_resolution, dir_video, path_dst_video, path_font)
 
 def main():
