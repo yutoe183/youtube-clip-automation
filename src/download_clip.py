@@ -93,6 +93,7 @@ def downloadAllAndClip(results, dir_download, dir_clip, remove_original, cookief
     "outtmpl": dir_download + "%(upload_date)s[%(id)s].%(ext)s", # 出力形式 投稿日[動画ID].mp4
     #"format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4] / bv*+ba/b", # Download the best mp4 video available, or the best video if no mp4 available
     "ignoreerrors": True, # エラーを無視して続行
+    "cookiefile": cookiefile,
   }
   MAX_RETRY_DOWNLOAD = 6 # ダウンロードに失敗した際の最大再試行回数
   results.sort(key=operator.itemgetter(1, 0, 2, 3)) # 日付順で、動画ごとにすべての切り抜きを作成
