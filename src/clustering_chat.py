@@ -103,7 +103,7 @@ def timeToDisplayTime(str): # 時間を表示用に変換(yyyyMMdd -> yyyy/MM/dd
 
 def clusteringChat(dir, list_query): # チャットを1事象ごとにクラスタリング
   SEC_CLUSTERING = 90 # チャット間隔が90秒未満の場合、同じ事象に対するコメントだと判定(初期値)
-  SEC_PRE = 15 # lv0チャット1個目の何秒前からチャット数を数えるか
+  SEC_PRE = 24 # lv0チャット1個目の何秒前からチャット数を数えるか
   MAX_EXAMPLE_CHAT = 24 # 参考例として出力する該当チャット数の最大値
   MAX_EXAMPLE_COMMENT = 24 # 参考例として出力する該当コメント数の最大値
   results = [] # [n][0]: VideoID, [n][1]: 投稿日, [n][2]: 開始秒数, [n][3]: 終了秒数, [n][4]: チャット/コメント数, [n][5][m]: チャット/コメント例 (m <= 12), [n][6]: 投げ銭金額, [n][7]: 公開日
@@ -178,7 +178,7 @@ def clusteringChat(dir, list_query): # チャットを1事象ごとにクラス�
 def writeResults(results, path): # 結果を出力: URL チャット/コメント数 金額 開始秒数 終了秒数 投稿日 チャット例
   DELIMITER = " " # 出力時の区切り文字
   NEWLINE = "\n" # 改行文字
-  SEC_BUFFER = 30 # チャット1個目の何秒前から動画を確認するか
+  SEC_BUFFER = 20 # チャット1個目の何秒前から動画を確認するか
   with open(path, "w") as f:
     for (id, _, sec_begin, sec_end, count, list_text, yen, release_date) in results:
       second = max(sec_begin - SEC_BUFFER, 0)
