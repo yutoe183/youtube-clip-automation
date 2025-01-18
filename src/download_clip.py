@@ -1,13 +1,13 @@
 import sys # argv
-import os # remove, path.isfile
+import os # remove, path.isfile, path.dirname
 import operator # itemgetter
 import csv # reader
 import glob # glob, escape
 import yt_dlp # YoutubeDL
-from moviepy.editor import *
+from moviepy import *
 
-from moviepy.config import change_settings
-change_settings({"FFMPEG_BINARY":"ffmpeg"}) # moviepyでnvencを呼び出せない問題の対応
+#from moviepy.config import change_settings
+#change_settings({"FFMPEG_BINARY":"ffmpeg"}) # moviepyでnvencを呼び出せない問題の対応
 
 def subStrBegin(str, str_begin, str_end): # 該当範囲の文字列を切り出し(開始文字列から検索)
   begin = str.find(str_begin) + len(str_begin)
@@ -67,6 +67,8 @@ def getResults(path, dict_date_title): # ファイルから結果を取得
   with open(path) as f:
     reader = csv.reader(f, delimiter=DELIMITER)
     for row in reader:
+      if len(row) > 0 and row[0] == "//":
+        continue
       if len(row) > 0 and "<!--" in row[0]:
         comment_out = True
       if len(row) > 0 and "-->" in row[0]:
@@ -112,7 +114,7 @@ def getResults(path, dict_date_title): # ファイルから結果を取得
               time_total_second = time_hour * 3600 + time_minute * 60 + time_second
             time_list.append(time_total_second)
             time_str = time_str[time_str.find(",") + 1:]
-        if timeToSecond(row[4]) < time_list[-1]:
+        if timeToSecond(row[4]) <= time_list[-1]:
           print("Incorrect time: " + date + "[" + id + "]")
         time_list = [a - b for a, b in zip(time_list, [sec_begin] * len(time_list))]
         head = row[0][:row[0].find("http")] # 行頭のメモ
@@ -159,6 +161,7 @@ def downloadAllAndClip(results, dir_download, dir_clip, remove_original, cookief
       str_sec_begin = str(int(sec_begin * 1000)).zfill(8)
       str_sec_end = str(int(sec_end * 1000)).zfill(8)
       path_clip = dir_clip + filename + "_" + str_sec_begin + "-" + str_sec_end + ".mp4"
+      print(str(i) + "/" + str(len(results)) + ": " + path_clip)
       if not os.path.isfile(path_clip): # 出力先ファイルが既に存在する場合は動画生成しない
         retry_download = MAX_RETRY_DOWNLOAD
         while retry_download > 0:
@@ -169,7 +172,7 @@ def downloadAllAndClip(results, dir_download, dir_clip, remove_original, cookief
           ydl.download([url])
         if path_download != "": # ダウンロードに失敗した場合はスキップ
           if sec_begin < sec_end: # 時刻指定に誤りがある場合はスキップ
-            videoclip = VideoFileClip(path_download).subclip(sec_begin, sec_end)
+            videoclip = VideoFileClip(path_download).subclipped(sec_begin, sec_end)
             videoclip.write_videofile(path_clip, codec="mpeg4", bitrate="1000000000")
       if remove_original and (i == len_results - 1 or id != results[i + 1][0]): # 用済みになった動画は、オプションがTrueなら削除
         if os.path.isfile(path_download):
@@ -195,6 +198,7 @@ def downloadAllAudioAndClip(results, dir_download, dir_clip, remove_original, co
     str_sec_begin = str(round(sec_begin * 1000)).zfill(8)
     str_sec_end = str(round(sec_end * 1000)).zfill(8)
     path_clip = dir_clip + filename + "_" + str_sec_begin + "-" + str_sec_end + ".mp4"
+    print(str(i + 1) + "/" + str(len(results)) + ": " + path_clip)
     if not os.path.isfile(path_clip): # 出力先ファイルが既に存在する場合は動画生成しない
       retry_download = MAX_RETRY_DOWNLOAD
       sec_begin_download = 0
@@ -217,10 +221,12 @@ def downloadAllAudioAndClip(results, dir_download, dir_clip, remove_original, co
             index_sec_end = downloaded[:index_extension].rfind("-")
             index_sec_begin = downloaded[:index_sec_end].rfind("_")
             if downloaded[index_sec_end + 1:index_extension].isdecimal(): # partファイルの場合は無視
-              sec_begin_download = int(downloaded[index_sec_begin + 1:index_sec_end]) / 1000
-              sec_end_download = int(downloaded[index_sec_end + 1:index_extension]) / 1000
-              if (sec_begin_download <= sec_begin - SEC_INTERVAL_BEGIN_CLIP or sec_begin_download == 0) and sec_end_download >= sec_end + SEC_INTERVAL_END_CLIP: # 適するダウンロード動画が存在する場合
+              sec_begin_download_current = int(downloaded[index_sec_begin + 1:index_sec_end]) / 1000
+              sec_end_download_current = int(downloaded[index_sec_end + 1:index_extension]) / 1000
+              if (sec_begin_download_current <= sec_begin - SEC_INTERVAL_BEGIN_CLIP or sec_begin_download_current == 0) and sec_end_download_current >= sec_end + SEC_INTERVAL_END_CLIP: # 適するダウンロード動画が存在する場合
                 path_download_video = downloaded
+                sec_begin_download = sec_begin_download_current
+                sec_end_download = sec_end_download_current
                 if path_download_video != "" and path_download_audio != "":
                   break
         if path_download_video != "" and path_download_audio != "":
@@ -255,12 +261,12 @@ def downloadAllAudioAndClip(results, dir_download, dir_clip, remove_original, co
             ydl.download([url])
       if path_download_video != "" and path_download_audio != "":
         videoclip = VideoFileClip(path_download_video) # ダウンロードの開始終了秒数をyt-dlpが厳守しない(少し長めになる)ので、切り抜き位置を調整する。現在は、終了秒数が一致している想定で調整している
-        audioclip = AudioFileClip(path_download_audio).subclip(sec_begin, sec_end)
+        audioclip = AudioFileClip(path_download_audio).subclipped(sec_begin, sec_end)
         if sec_end_download <= 0:
           sec_end_download = videoclip.duration
         sec_begin_clip = videoclip.duration - sec_end_download + sec_begin # = videoclip.duration - (sec_end_download - sec_begin_download) + (sec_begin - sec_begin_download)
         sec_end_clip = videoclip.duration - sec_end_download + sec_end
-        subclip = videoclip.subclip(sec_begin_clip, sec_end_clip).set_audio(audioclip) # 映像と音声を結合
+        subclip = videoclip.subclipped(sec_begin_clip, sec_end_clip).with_audio(audioclip) # 映像と音声を結合
         subclip.write_videofile(path_clip, codec="mpeg4", bitrate="1000000000")
     if remove_original and (i == len_results - 1 or id != results[i + 1][0]): # 用済みになった動画は、オプションがTrueなら削除
       for downloaded in glob.glob(glob.escape(filename_download_pre) + "*"):
@@ -285,6 +291,7 @@ def downloadOnlyClip(results, dir_download, dir_clip, remove_original, cookiefil
     str_sec_begin = str(round(sec_begin * 1000)).zfill(8)
     str_sec_end = str(round(sec_end * 1000)).zfill(8)
     path_clip = dir_clip + filename + "_" + str_sec_begin + "-" + str_sec_end + ".mp4"
+    print(str(i) + "/" + str(len(results)) + ": " + path_clip)
     if not os.path.isfile(path_clip): # 出力先ファイルが既に存在する場合は動画生成しない
       retry_download = MAX_RETRY_DOWNLOAD
       sec_begin_download = 0
@@ -333,7 +340,7 @@ def downloadOnlyClip(results, dir_download, dir_clip, remove_original, cookiefil
           sec_end_download = videoclip.duration
         sec_begin_clip = videoclip.duration - sec_end_download + sec_begin # = videoclip.duration - (sec_end_download - sec_begin_download) + (sec_begin - sec_begin_download)
         sec_end_clip = videoclip.duration - sec_end_download + sec_end
-        subclip = videoclip.subclip(sec_begin_clip, sec_end_clip)
+        subclip = videoclip.subclipped(sec_begin_clip, sec_end_clip)
         subclip.write_videofile(path_clip, codec="mpeg4", audio_codec="libvorbis", bitrate="1000000000")
     if remove_original and (i == len_results - 1 or id != results[i + 1][0]): # 用済みになった動画は、オプションがTrueなら削除
       for downloaded in glob.glob(glob.escape(filename_download_pre) + "*"):
